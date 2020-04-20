@@ -3,9 +3,12 @@
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Form\Model\UserRegistrationFormModel;
+use App\Form\UserRegistrationFormType;
 use App\Security\LoginFormAuthenticator;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Core\Encoder\UserPasswordEncoderInterface;
 use Symfony\Component\Security\Guard\GuardAuthenticatorHandler;
@@ -15,8 +18,10 @@ class SecurityController extends AbstractController
 {
     /**
      * @Route("/login", name="app_login")
+     * @param AuthenticationUtils $authenticationUtils
+     * @return Response
      */
-    public function login(AuthenticationUtils $authenticationUtils)
+    public function login(AuthenticationUtils $authenticationUtils): Response
     {
         // get the login error if there is one
         $error = $authenticationUtils->getLastAuthenticationError();
@@ -33,27 +38,40 @@ class SecurityController extends AbstractController
     /**
      * @Route("/logout", name="app_logout")
      */
-    public function logout()
+    public function logout(): void
     {
-        throw new \Exception('Will be intercepted before getting here');
+        throw new \RuntimeException('Will be intercepted before getting here');
     }
 
     /**
      * @Route("/register", name="app_register")
+     * @param Request $request
+     * @param UserPasswordEncoderInterface $passwordEncoder
+     * @param GuardAuthenticatorHandler $guardHandler
+     * @param LoginFormAuthenticator $formAuthenticator
+     * @return Response|null
      */
-    public function register(Request $request, UserPasswordEncoderInterface $passwordEncoder, GuardAuthenticatorHandler $guardHandler, LoginFormAuthenticator $formAuthenticator)
+    public function register(Request $request, UserPasswordEncoderInterface $passwordEncoder, GuardAuthenticatorHandler $guardHandler, LoginFormAuthenticator $formAuthenticator): ?Response
     {
-        // TODO - use Symfony forms & validation
-        if ($request->isMethod('POST')) {
+        $form = $this->createForm(UserRegistrationFormType::class);
+        $form->handleRequest($request);
+
+        if ($form->isSubmitted() && $form->isValid()) {
+            /** @var UserRegistrationFormModel $userModel */
+            $userModel = $form->getData();
+
             $user = new User();
-            $user->setEmail($request->request->get('email'));
-            $user->setFirstName('Mystery');
-            $user->setPassword($passwordEncoder->encodePassword(
-                $user,
-                $request->request->get('password')
-            ));
+            $user->setEmail($userModel->email);
+            $user->setPassword($passwordEncoder->encodePassword( $user,  $userModel->plainPassword ));
+
+            // be absolutely sure they agree
+            if (true === $userModel->agreeTerms) {
+                $user->agreeTerms();
+            }
+
 
             $em = $this->getDoctrine()->getManager();
+
             $em->persist($user);
             $em->flush();
 
@@ -65,6 +83,8 @@ class SecurityController extends AbstractController
             );
         }
 
-        return $this->render('security/register.html.twig');
+        return $this->render('security/register.html.twig', [
+            'registrationForm' => $form->createView(),
+        ]);
     }
 }
